@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import { Vehicle, Transaction, PushNotification } from '../types';
+import { Vehicle, Transaction, PushNotification, BankDetails } from '../types';
 
 // Supabase configuration from environment or provided credentials as fallback
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://xacwfjlaalnochjdfmoa.supabase.co';
-const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhY3dmamxhYWxub2NoamRmbW9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzQ5NzEsImV4cCI6MjA5ODY1MDk3MX0.tqmuu6Iakivgsix5gK2-5X65XUC_mHmzxLjizKdYmmA';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://xacwfjlaalnochjdfmoa.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhY3dmamxhYWxub2NoamRmbW9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNzQ5NzEsImV4cCI6MjA5ODY1MDk3MX0.tqmuu6Iakivgsix5gK2-5X65XUC_mHmzxLjizKdYmmA';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
 
 -- Activez RLS pour permettre les lectures anonymes et les écritures de l'admin
 ALTER TABLE vehicles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lecture publique des vehicules" ON vehicles;
 CREATE POLICY "Lecture publique des vehicules" ON vehicles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Gestion totale des vehicules" ON vehicles;
 CREATE POLICY "Gestion totale des vehicules" ON vehicles FOR ALL USING (true) WITH CHECK (true);
 
 -- 2. Table des transactions
@@ -63,8 +65,11 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lecture des transactions" ON transactions;
 CREATE POLICY "Lecture des transactions" ON transactions FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Ajout de transaction" ON transactions;
 CREATE POLICY "Ajout de transaction" ON transactions FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Gestion totale des transactions" ON transactions;
 CREATE POLICY "Gestion totale des transactions" ON transactions FOR ALL USING (true);
 
 -- 3. Table des notifications
@@ -79,8 +84,25 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lecture des notifications" ON notifications;
 CREATE POLICY "Lecture des notifications" ON notifications FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Gestion totale des notifications" ON notifications;
 CREATE POLICY "Gestion totale des notifications" ON notifications FOR ALL USING (true);
+
+-- 4. Table des coordonnées bancaires
+CREATE TABLE IF NOT EXISTS bank_details (
+  id TEXT PRIMARY KEY,
+  nom TEXT,
+  iban TEXT,
+  bic TEXT,
+  "updatedAt" TEXT
+);
+
+ALTER TABLE bank_details ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lecture des coordonnees bancaires" ON bank_details;
+CREATE POLICY "Lecture des coordonnees bancaires" ON bank_details FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Gestion totale des coordonnees bancaires" ON bank_details;
+CREATE POLICY "Gestion totale des coordonnees bancaires" ON bank_details FOR ALL USING (true) WITH CHECK (true);
 `;
 
 // Helper to standardise base64 image uploading to supabase bucket if needed (though storing as text/base64 directly works perfectly in the TEXT field)
@@ -203,6 +225,24 @@ export async function insertSupabaseTransaction(transaction: Transaction): Promi
   }
 }
 
+export async function updateSupabaseTransactionStatus(id: string, status: Transaction['status']): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('transactions')
+      .update({ status })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Supabase updateSupabaseTransactionStatus error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Supabase updateSupabaseTransactionStatus failed:', err);
+    return false;
+  }
+}
+
 export async function deleteSupabaseTransaction(id: string): Promise<boolean> {
   try {
     const { error } = await supabase
@@ -279,6 +319,49 @@ export async function deleteSupabaseNotification(id: string): Promise<boolean> {
     return true;
   } catch (err) {
     console.error('Supabase deleteNotification failed:', err);
+    return false;
+  }
+}
+
+// --- BANK DETAILS API ---
+export async function getSupabaseBankDetails(): Promise<BankDetails | null> {
+  try {
+    const { data, error } = await supabase
+      .from('bank_details')
+      .select('*')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Supabase getSupabaseBankDetails error:', error.message);
+      return null;
+    }
+    return data as BankDetails | null;
+  } catch (err) {
+    console.warn('Supabase bank details fetch failed:', err);
+    return null;
+  }
+}
+
+export async function upsertSupabaseBankDetails(bankDetails: BankDetails): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('bank_details')
+      .upsert({
+        id: bankDetails.id,
+        nom: bankDetails.nom,
+        iban: bankDetails.iban,
+        bic: bankDetails.bic,
+        updatedAt: bankDetails.updatedAt
+      });
+
+    if (error) {
+      console.error('Supabase upsertSupabaseBankDetails error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Supabase upsertSupabaseBankDetails failed:', err);
     return false;
   }
 }

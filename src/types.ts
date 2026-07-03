@@ -27,7 +27,7 @@ export interface Transaction {
   date: string;
   paymentMethod: string;
   cardNumber: string; // Obfuscated or last 4
-  status: 'success' | 'pending';
+  status: 'success' | 'pending' | 'virement_recu' | 'virement_non_recu';
 }
 
 export interface PushNotification {
@@ -39,3 +39,12 @@ export interface PushNotification {
   type: 'new_listing' | 'promo' | 'system' | 'sale';
   vehicleId?: string;
 }
+
+export interface BankDetails {
+  id: string;
+  nom: string;
+  iban: string;
+  bic: string;
+  updatedAt: string;
+}
+

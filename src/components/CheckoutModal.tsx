@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldCheck, CreditCard, User, Mail, Phone, Lock, CheckCircle2, ArrowRight, Printer, AlertTriangle, AlertCircle } from 'lucide-react';
-import { Vehicle } from '../types';
+import { X, ShieldCheck, CreditCard, User, Mail, Phone, Lock, CheckCircle2, ArrowRight, Printer, AlertTriangle, AlertCircle, Copy, Check, Landmark } from 'lucide-react';
+import { Vehicle, BankDetails } from '../types';
 
 interface CheckoutModalProps {
   vehicle: Vehicle | null;
@@ -13,11 +13,12 @@ interface CheckoutModalProps {
     paymentMethod: string,
     cardNumber: string
   ) => void;
+  bankDetails: BankDetails;
 }
 
 type CheckoutStep = 'details' | 'payment' | 'processing' | 'success';
 
-export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: CheckoutModalProps) {
+export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess, bankDetails }: CheckoutModalProps) {
   if (!vehicle) return null;
 
   const [step, setStep] = useState<CheckoutStep>('details');
@@ -28,6 +29,10 @@ export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: Ch
   const [phone, setPhone] = useState('');
   
   // Payment Info State
+  const [paymentMethod, setPaymentMethod] = useState<'virement' | 'carte'>('virement');
+  const [copiedIban, setCopiedIban] = useState(false);
+  const [copiedBic, setCopiedBic] = useState(false);
+
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
@@ -95,13 +100,22 @@ export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: Ch
 
   const handleConfirmPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (validatePayment()) {
+    if (paymentMethod === 'carte') {
+      if (validatePayment()) {
+        setStep('processing');
+        // Simulate bank verification
+        setTimeout(() => {
+          setStep('success');
+          onPaymentSuccess(name, email, phone, 'Carte Bancaire', cardNumber.slice(-4));
+        }, 2500);
+      }
+    } else {
       setStep('processing');
-      // Simulate bank verification
+      // Simulate transfer registration
       setTimeout(() => {
         setStep('success');
-        onPaymentSuccess(name, email, phone, 'Carte Bancaire', cardNumber.slice(-4));
-      }, 2500);
+        onPaymentSuccess(name, email, phone, 'Virement Bancaire', 'RIB');
+      }, 2000);
     }
   };
 
@@ -256,115 +270,219 @@ export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: Ch
                   >
                     {/* Invoice recap card */}
                     <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100 space-y-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Montant véhicule :</span>
-                        <span className="font-bold text-gray-900">{(price).toLocaleString('fr-FR')} €</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Frais de traitement (0.5%) :</span>
-                        <span className="font-bold text-gray-900">{(transactionFee).toLocaleString('fr-FR')} €</span>
-                      </div>
-                      <div className="h-px bg-gray-200/60" />
-                      <div className="flex justify-between text-sm font-black text-gray-900">
-                        <span>Total à régler :</span>
-                        <span>{(totalAmount).toLocaleString('fr-FR')} €</span>
-                      </div>
+                       <div className="flex justify-between">
+                         <span className="text-gray-500">Montant véhicule :</span>
+                         <span className="font-bold text-gray-900">{(price).toLocaleString('fr-FR')} €</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span className="text-gray-500">Frais de traitement (0.5%) :</span>
+                         <span className="font-bold text-gray-900">{(transactionFee).toLocaleString('fr-FR')} €</span>
+                       </div>
+                       <div className="h-px bg-gray-200/60" />
+                       <div className="flex justify-between text-sm font-black text-gray-900">
+                         <span>Total à régler :</span>
+                         <span>{(totalAmount).toLocaleString('fr-FR')} €</span>
+                       </div>
                     </div>
 
-                    {/* Virtual Card illustration */}
-                    <div className="rounded-2xl bg-gradient-to-br from-gray-900 via-slate-800 to-gray-950 p-5 text-white shadow-lg space-y-6">
-                      <div className="flex justify-between items-start">
-                        <CreditCard className="h-8 w-8 text-white/90" />
-                        <span className="text-[10px] font-bold text-white/50 tracking-widest">SECURE CHIP</span>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-lg font-mono tracking-widest text-center min-h-[28px]">
-                          {cardNumber || '•••• •••• •••• ••••'}
-                        </p>
-                        <div className="flex justify-between text-xs font-mono">
-                          <span className="truncate">{cardHolder.toUpperCase() || 'TITULAIRE DE CARTE'}</span>
-                          <span>{cardExpiry || 'MM/AA'}</span>
-                        </div>
-                      </div>
+                    {/* Payment Method Selector */}
+                    <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl text-xs font-bold">
+                       <button
+                         type="button"
+                         onClick={() => setPaymentMethod('virement')}
+                         className={`py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                           paymentMethod === 'virement' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                         }`}
+                       >
+                         <Landmark className="h-3.5 w-3.5" />
+                         <span>Virement Bancaire</span>
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => setPaymentMethod('carte')}
+                         className={`py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                           paymentMethod === 'carte' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                         }`}
+                       >
+                         <CreditCard className="h-3.5 w-3.5" />
+                         <span>Carte Bancaire</span>
+                       </button>
                     </div>
 
-                    {/* Input form */}
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nom du Titulaire</label>
-                        <input
-                          type="text"
-                          placeholder="M. Jean Dupont"
-                          value={cardHolder}
-                          onChange={(e) => setCardHolder(e.target.value)}
-                          className={`w-full px-4 py-2.5 bg-gray-50 border ${
-                            errors.cardHolder ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
-                          } rounded-xl text-sm outline-none transition`}
-                        />
-                        {errors.cardHolder && <p className="text-red-500 text-[11px] mt-1">{errors.cardHolder}</p>}
-                      </div>
+                    {paymentMethod === 'virement' ? (
+                       <div className="space-y-4">
+                         <div className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-100/60 space-y-3">
+                           <p className="text-xs text-gray-600 leading-relaxed font-sans">
+                             Veuillez transférer le montant de <span className="font-extrabold text-gray-900">{(totalAmount).toLocaleString('fr-FR')} €</span> sur le compte bancaire ci-dessous pour valider votre réservation.
+                           </p>
 
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Numéro de carte</label>
-                        <input
-                          type="text"
-                          placeholder="4532 9845 2312 8945"
-                          value={cardNumber}
-                          onChange={handleCardNumberChange}
-                          className={`w-full px-4 py-2.5 bg-gray-50 border ${
-                            errors.cardNumber ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
-                          } rounded-xl text-sm font-mono outline-none transition`}
-                        />
-                        {errors.cardNumber && <p className="text-red-500 text-[11px] mt-1">{errors.cardNumber}</p>}
-                      </div>
+                           <div className="bg-white rounded-xl p-3.5 border border-emerald-100 space-y-3 font-mono text-xs shadow-sm">
+                             <div className="flex justify-between items-center gap-2">
+                               <div>
+                                 <span className="text-[9px] text-gray-400 font-sans font-bold block uppercase tracking-wider">Bénéficiaire</span>
+                                 <span className="text-gray-950 font-bold">{bankDetails?.nom || 'Naouh Fatih'}</span>
+                               </div>
+                             </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Expiration</label>
-                          <input
-                            type="text"
-                            placeholder="MM/AA"
-                            value={cardExpiry}
-                            onChange={handleExpiryChange}
-                            className={`w-full px-4 py-2.5 bg-gray-50 border ${
-                              errors.cardExpiry ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
-                            } rounded-xl text-sm font-mono outline-none transition text-center`}
-                          />
-                          {errors.cardExpiry && <p className="text-red-500 text-[11px] mt-1">{errors.cardExpiry}</p>}
-                        </div>
+                             <div className="flex justify-between items-center gap-2 border-t border-gray-100 pt-2.5">
+                               <div className="flex-1 min-w-0">
+                                 <span className="text-[9px] text-gray-400 font-sans font-bold block uppercase tracking-wider">IBAN</span>
+                                 <span className="text-gray-950 font-bold block break-all select-all">{bankDetails?.iban || 'FR7616218000014012142778679'}</span>
+                               </div>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   navigator.clipboard.writeText(bankDetails?.iban || 'FR7616218000014012142778679');
+                                   setCopiedIban(true);
+                                   setTimeout(() => setCopiedIban(false), 2000);
+                                 }}
+                                 className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-800 transition shrink-0 cursor-pointer"
+                                 title="Copier l'IBAN"
+                               >
+                                 {copiedIban ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                               </button>
+                             </div>
 
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 uppercase mb-1">CVV / CVC</label>
-                          <input
-                            type="password"
-                            placeholder="123"
-                            value={cardCvv}
-                            onChange={handleCvvChange}
-                            className={`w-full px-4 py-2.5 bg-gray-50 border ${
-                              errors.cardCvv ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
-                            } rounded-xl text-sm font-mono outline-none transition text-center`}
-                          />
-                          {errors.cardCvv && <p className="text-red-500 text-[11px] mt-1">{errors.cardCvv}</p>}
-                        </div>
-                      </div>
-                    </div>
+                             <div className="flex justify-between items-center gap-2 border-t border-gray-100 pt-2.5">
+                               <div>
+                                 <span className="text-[9px] text-gray-400 font-sans font-bold block uppercase tracking-wider">BIC / SWIFT</span>
+                                 <span className="text-gray-950 font-bold block select-all">{bankDetails?.bic || 'BFBKFRP1'}</span>
+                               </div>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   navigator.clipboard.writeText(bankDetails?.bic || 'BFBKFRP1');
+                                   setCopiedBic(true);
+                                   setTimeout(() => setCopiedBic(false), 2000);
+                                 }}
+                                 className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-800 transition shrink-0 cursor-pointer"
+                                 title="Copier le BIC"
+                               >
+                                 {copiedBic ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                               </button>
+                             </div>
+                           </div>
 
-                    <div className="flex gap-2.5 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => setStep('details')}
-                        className="w-1/3 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition"
-                      >
-                        Retour
-                      </button>
-                      <button
-                        type="submit"
-                        className="w-2/3 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 shadow-md hover:shadow-lg"
-                      >
-                        <ShieldCheck className="h-4 w-4" />
-                        <span>Payer {(totalAmount).toLocaleString('fr-FR')} €</span>
-                      </button>
-                    </div>
+                           <div className="p-3 bg-white rounded-xl border border-gray-100 text-[10px] text-gray-500 leading-relaxed font-sans">
+                             📌 <span className="font-bold">Libellé du virement :</span> Veuillez indiquer le nom <span className="font-semibold text-gray-900">({name || 'DUPONT'})</span> et la référence <span className="font-semibold text-gray-900">({txId})</span> dans l'intitulé de votre virement.
+                           </div>
+                         </div>
+
+                         <div className="flex gap-2.5 pt-2">
+                           <button
+                             type="button"
+                             onClick={() => setStep('details')}
+                             className="w-1/3 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                           >
+                             Retour
+                           </button>
+                           <button
+                             type="submit"
+                             className="w-2/3 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 shadow-md hover:shadow-lg cursor-pointer"
+                           >
+                             <Landmark className="h-4 w-4" />
+                             <span>Confirmer le Virement</span>
+                           </button>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="space-y-4">
+                         {/* Virtual Card illustration */}
+                         <div className="rounded-2xl bg-gradient-to-br from-gray-900 via-slate-800 to-gray-950 p-5 text-white shadow-lg space-y-6">
+                           <div className="flex justify-between items-start">
+                             <CreditCard className="h-8 w-8 text-white/90" />
+                             <span className="text-[10px] font-bold text-white/50 tracking-widest">SECURE CHIP</span>
+                           </div>
+                           <div className="space-y-2">
+                             <p className="text-lg font-mono tracking-widest text-center min-h-[28px]">
+                               {cardNumber || '•••• •••• •••• ••••'}
+                             </p>
+                             <div className="flex justify-between text-xs font-mono">
+                               <span className="truncate">{cardHolder.toUpperCase() || 'TITULAIRE DE CARTE'}</span>
+                               <span>{cardExpiry || 'MM/AA'}</span>
+                             </div>
+                           </div>
+                         </div>
+
+                         {/* Input form */}
+                         <div className="space-y-3">
+                           <div>
+                             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nom du Titulaire</label>
+                             <input
+                               type="text"
+                               placeholder="M. Jean Dupont"
+                               value={cardHolder}
+                               onChange={(e) => setCardHolder(e.target.value)}
+                               className={`w-full px-4 py-2.5 bg-gray-50 border ${
+                                 errors.cardHolder ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
+                               } rounded-xl text-sm outline-none transition`}
+                             />
+                             {errors.cardHolder && <p className="text-red-500 text-[11px] mt-1">{errors.cardHolder}</p>}
+                           </div>
+
+                           <div>
+                             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Numéro de carte</label>
+                             <input
+                               type="text"
+                               placeholder="4532 9845 2312 8945"
+                               value={cardNumber}
+                               onChange={handleCardNumberChange}
+                               className={`w-full px-4 py-2.5 bg-gray-50 border ${
+                                 errors.cardNumber ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
+                               } rounded-xl text-sm font-mono outline-none transition`}
+                             />
+                             {errors.cardNumber && <p className="text-red-500 text-[11px] mt-1">{errors.cardNumber}</p>}
+                           </div>
+
+                           <div className="grid grid-cols-2 gap-3">
+                             <div>
+                               <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Expiration</label>
+                               <input
+                                 type="text"
+                                 placeholder="MM/AA"
+                                 value={cardExpiry}
+                                 onChange={handleExpiryChange}
+                                 className={`w-full px-4 py-2.5 bg-gray-50 border ${
+                                   errors.cardExpiry ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
+                                 } rounded-xl text-sm font-mono outline-none transition text-center`}
+                               />
+                               {errors.cardExpiry && <p className="text-red-500 text-[11px] mt-1">{errors.cardExpiry}</p>}
+                             </div>
+
+                             <div>
+                               <label className="block text-xs font-bold text-gray-700 uppercase mb-1">CVV / CVC</label>
+                               <input
+                                 type="password"
+                                 placeholder="123"
+                                 value={cardCvv}
+                                 onChange={handleCvvChange}
+                                 className={`w-full px-4 py-2.5 bg-gray-50 border ${
+                                   errors.cardCvv ? 'border-red-500' : 'border-gray-200 focus:border-gray-900'
+                                 } rounded-xl text-sm font-mono outline-none transition text-center`}
+                               />
+                               {errors.cardCvv && <p className="text-red-500 text-[11px] mt-1">{errors.cardCvv}</p>}
+                             </div>
+                           </div>
+                         </div>
+
+                         <div className="flex gap-2.5 pt-4">
+                           <button
+                             type="button"
+                             onClick={() => setStep('details')}
+                             className="w-1/3 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                           >
+                             Retour
+                           </button>
+                           <button
+                             type="submit"
+                             className="w-2/3 py-3 bg-emerald-600 hover:bg-emerald-50 text-white font-bold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 shadow-md hover:shadow-lg cursor-pointer"
+                           >
+                             <ShieldCheck className="h-4 w-4" />
+                             <span>Payer {(totalAmount).toLocaleString('fr-FR')} €</span>
+                           </button>
+                         </div>
+                       </div>
+                     )}
                   </motion.form>
                 )}
 
@@ -404,8 +522,12 @@ export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: Ch
                         <CheckCircle2 className="h-8 w-8" />
                       </div>
                       <div>
-                        <h3 className="text-lg font-black text-gray-900">Achat Confirmé !</h3>
-                        <p className="text-xs text-emerald-600 font-bold">Paiement reçu avec succès</p>
+                        <h3 className="text-lg font-black text-gray-900">
+                          {paymentMethod === 'virement' ? 'Commande Réservée !' : 'Achat Confirmé !'}
+                        </h3>
+                        <p className="text-xs text-emerald-600 font-bold">
+                          {paymentMethod === 'virement' ? 'Virement bancaire enregistré' : 'Paiement reçu avec succès'}
+                        </p>
                       </div>
                     </div>
 
@@ -433,7 +555,9 @@ export default function CheckoutModal({ vehicle, onClose, onPaymentSuccess }: Ch
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Paiement :</span>
-                          <span className="text-gray-800">Carte Bancaire (•••• {cardNumber.slice(-4)})</span>
+                          <span className="text-gray-800">
+                            {paymentMethod === 'virement' ? 'Virement Bancaire (En attente)' : `Carte Bancaire (•••• ${cardNumber.slice(-4)})`}
+                          </span>
                         </div>
                       </div>
 

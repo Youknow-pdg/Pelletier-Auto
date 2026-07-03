@@ -4,7 +4,7 @@ import {
   Car, Bell, Shield, Phone, Mail, MapPin, Clock, ArrowUp, Star, CreditCard, Sparkles, MessageSquareHeart 
 } from 'lucide-react';
 
-import { Vehicle, Transaction, PushNotification } from './types';
+import { Vehicle, Transaction, PushNotification, BankDetails } from './types';
 import { INITIAL_VEHICLES } from './mockData';
 import logoPelletierA from './logoPelletierA.png';
 import { 
@@ -14,7 +14,10 @@ import {
   upsertSupabaseVehicle, 
   deleteSupabaseVehicle, 
   insertSupabaseTransaction, 
-  upsertSupabaseNotification 
+  upsertSupabaseNotification,
+  getSupabaseBankDetails,
+  upsertSupabaseBankDetails,
+  updateSupabaseTransactionStatus
 } from './lib/supabase';
 
 // Import our custom components
@@ -32,6 +35,13 @@ export default function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<PushNotification[]>([]);
+  const [bankDetails, setBankDetails] = useState<BankDetails>({
+    id: 'default',
+    nom: 'Naouh Fatih',
+    iban: 'FR7616218000014012142778679',
+    bic: 'BFBKFRP1',
+    updatedAt: new Date().toISOString()
+  });
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentSection, setCurrentSection] = useState<'browse' | 'admin' | 'transactions'>('browse');
@@ -157,6 +167,29 @@ export default function App() {
         } else {
           setNotifications(defaultNotifs);
           localStorage.setItem('luxe_auto_notifications', JSON.stringify(defaultNotifs));
+        }
+      }
+
+      // 4. Load Bank Details from Supabase
+      const sbBank = await getSupabaseBankDetails();
+      if (sbBank !== null) {
+        setBankDetails(sbBank);
+        localStorage.setItem('luxe_auto_bank_details', JSON.stringify(sbBank));
+      } else {
+        const storedBank = localStorage.getItem('luxe_auto_bank_details');
+        if (storedBank) {
+          setBankDetails(JSON.parse(storedBank));
+        } else {
+          const defaultBank: BankDetails = {
+            id: 'default',
+            nom: 'Naouh Fatih',
+            iban: 'FR7616218000014012142778679',
+            bic: 'BFBKFRP1',
+            updatedAt: new Date().toISOString()
+          };
+          setBankDetails(defaultBank);
+          localStorage.setItem('luxe_auto_bank_details', JSON.stringify(defaultBank));
+          await upsertSupabaseBankDetails(defaultBank);
         }
       }
     }
@@ -348,6 +381,28 @@ export default function App() {
     triggerToast(customNotif);
   };
 
+  // Admin Update Bank Details
+  const handleUpdateBankDetails = (updatedDetails: BankDetails) => {
+    setBankDetails(updatedDetails);
+    localStorage.setItem('luxe_auto_bank_details', JSON.stringify(updatedDetails));
+
+    // Persist to Supabase in the background
+    upsertSupabaseBankDetails(updatedDetails).catch((e) =>
+      console.warn('Supabase update bank details sync skipped:', e)
+    );
+
+    // Dynamic push notification for updating payment coordinates (system auditable action)
+    const updateNotif: PushNotification = {
+      id: `bank-update-${Date.now()}`,
+      title: '💼 Coordonnées Bancaires Modifiées',
+      message: `Les coordonnées de virement bancaire ont été mises à jour avec succès dans l'espace d'administration.`,
+      time: new Date().toISOString(),
+      read: true,
+      type: 'system',
+    };
+    saveNotifications([updateNotif, ...notifications]);
+  };
+
   // Client checkout completion
   const handlePaymentSuccess = (
     buyerName: string,
@@ -370,6 +425,9 @@ export default function App() {
       upsertSupabaseVehicle(soldCar).catch(e => console.warn('Supabase mark sold vehicle skipped:', e));
     }
 
+    const isVirement = paymentMethod === 'Virement Bancaire';
+    const initialStatus = isVirement ? 'pending' : 'success';
+
     // 2. Generate and append sale Transaction
     const newTx: Transaction = {
       id: `TX-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -383,28 +441,66 @@ export default function App() {
       date: new Date().toISOString(),
       paymentMethod,
       cardNumber,
-      status: 'success',
+      status: initialStatus,
     };
 
-    saveTransactions([newTx, ...transactions]);
+    const nextTxs = [newTx, ...transactions];
+    saveTransactions(nextTxs);
 
     // Insert transaction into Supabase
     insertSupabaseTransaction(newTx).catch(e => console.warn('Supabase insert transaction skipped:', e));
 
-    // 3. Send admin log notification
+    // 3. Send admin log notification / claim notification
     const saleNotif: PushNotification = {
       id: `sale-alert-${Date.now()}`,
-      title: '🎉 Félicitations pour votre achat !',
-      message: `Votre commande pour la ${checkoutVehicle.brand || ''} ${checkoutVehicle.model || ''} a été validée. Référence : ${newTx.id}.`,
+      title: isVirement ? '🏦 Virement déclaré par un client' : '🎉 Félicitations pour votre achat !',
+      message: isVirement 
+        ? `Le client ${buyerName} déclare avoir effectué un virement de ${(checkoutVehicle.price || 0).toLocaleString('fr-FR')} € pour la ${checkoutVehicle.brand || ''} ${checkoutVehicle.model || ''}. Référence : ${newTx.id}. Veuillez vérifier votre compte bancaire pour valider ou rejeter la transaction.`
+        : `Votre commande pour la ${checkoutVehicle.brand || ''} ${checkoutVehicle.model || ''} a été validée. Référence : ${newTx.id}.`,
       time: new Date().toISOString(),
       read: false,
-      type: 'sale',
+      type: isVirement ? 'system' : 'sale',
     };
+    
     saveNotifications([saleNotif, ...notifications]);
     
     if (isSubscribed) {
       triggerToast(saleNotif);
     }
+  };
+
+  // Admin Update Transaction Status
+  const handleUpdateTransactionStatus = (txId: string, newStatus: Transaction['status']) => {
+    let statusLabel = '';
+    if (newStatus === 'success' || newStatus === 'virement_recu') statusLabel = 'Virement reçu (Confirmé)';
+    else if (newStatus === 'virement_non_recu') statusLabel = 'Virement non reçu (Rejeté)';
+    else if (newStatus === 'pending') statusLabel = 'Mis en attente';
+
+    const updatedTxs = transactions.map((t) => {
+      if (t.id === txId) {
+        // Generate a dynamic push notification regarding this update to alert the admin/system logs
+        const statusNotif: PushNotification = {
+          id: `tx-status-${txId}-${Date.now()}`,
+          title: `💼 Statut Virement ${txId} mis à jour`,
+          message: `Le virement pour la transaction ${txId} (${t.buyerName}) a été marqué comme : ${statusLabel}.`,
+          time: new Date().toISOString(),
+          read: true,
+          type: 'system',
+        };
+        saveNotifications([statusNotif, ...notifications]);
+
+        return { ...t, status: newStatus };
+      }
+      return t;
+    });
+
+    setTransactions(updatedTxs);
+    localStorage.setItem('luxe_auto_transactions', JSON.stringify(updatedTxs));
+
+    // Persist status to Supabase in the background
+    updateSupabaseTransactionStatus(txId, newStatus).catch((e) =>
+      console.warn('Supabase update transaction status sync skipped:', e)
+    );
   };
 
   // --- live background offer simulator ---
@@ -650,6 +746,9 @@ export default function App() {
                   onSendPushNotification={handleSendManualPush}
                   currentSection={currentSection as 'admin' | 'transactions'}
                   onNavigateToSection={(sec) => setCurrentSection(sec as any)}
+                  bankDetails={bankDetails}
+                  onUpdateBankDetails={handleUpdateBankDetails}
+                  onUpdateTransactionStatus={handleUpdateTransactionStatus}
                 />
               ) : (
                 // Safe Fallback locked screen
@@ -790,6 +889,7 @@ export default function App() {
         vehicle={checkoutVehicle}
         onClose={() => setCheckoutVehicle(null)}
         onPaymentSuccess={handlePaymentSuccess}
+        bankDetails={bankDetails}
       />
 
       {/* 3. Secure Admin Login Modal */}

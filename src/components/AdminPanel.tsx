@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Shield, Euro, BarChart3, Receipt, Radio, ArrowUpRight, Sparkles, Check, RefreshCw, Upload, Database, Copy, AlertTriangle } from 'lucide-react';
-import { Vehicle, Transaction, PushNotification } from '../types';
+import { Vehicle, Transaction, PushNotification, BankDetails } from '../types';
 import { testSupabaseConnection, seedSupabaseDatabase, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 
 // Helper to compress local images to prevent localStorage overflow
@@ -50,6 +50,9 @@ interface AdminPanelProps {
   onSendPushNotification: (title: string, message: string) => void;
   currentSection: 'admin' | 'transactions';
   onNavigateToSection: (section: 'browse' | 'contact' | 'admin' | 'transactions') => void;
+  bankDetails: BankDetails;
+  onUpdateBankDetails: (details: BankDetails) => void;
+  onUpdateTransactionStatus?: (id: string, status: Transaction['status']) => void;
 }
 
 // Pre-configured elegant images that the admin can select with one-click
@@ -71,7 +74,25 @@ export default function AdminPanel({
   onSendPushNotification,
   currentSection,
   onNavigateToSection,
+  bankDetails,
+  onUpdateBankDetails,
+  onUpdateTransactionStatus,
 }: AdminPanelProps) {
+  // Bank fields states
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [bankNom, setBankNom] = useState(bankDetails?.nom || '');
+  const [bankIban, setBankIban] = useState(bankDetails?.iban || '');
+  const [bankBic, setBankBic] = useState(bankDetails?.bic || '');
+  const [bankSuccess, setBankSuccess] = useState(false);
+
+  useEffect(() => {
+    if (bankDetails) {
+      setBankNom(bankDetails.nom);
+      setBankIban(bankDetails.iban);
+      setBankBic(bankDetails.bic);
+    }
+  }, [bankDetails]);
+
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
@@ -568,6 +589,131 @@ export default function AdminPanel({
             )}
           </div>
 
+          {/* Bank Details Management Card */}
+          <div className="lg:col-span-4 bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+              <div className="flex items-center space-x-2">
+                <Euro className="h-5 w-5 text-gray-800" />
+                <h3 className="font-bold text-gray-900 text-sm">Coordonnées de Virement</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isEditingBank) {
+                    setBankNom(bankDetails?.nom || '');
+                    setBankIban(bankDetails?.iban || '');
+                    setBankBic(bankDetails?.bic || '');
+                  }
+                  setIsEditingBank(!isEditingBank);
+                }}
+                className="text-xs font-bold text-red-600 hover:text-red-700 transition cursor-pointer"
+              >
+                {isEditingBank ? 'Annuler' : 'Modifier'}
+              </button>
+            </div>
+
+            {!isEditingBank ? (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Ces coordonnées bancaires sont affichées aux clients pour l'achat de véhicules par virement bancaire.
+                </p>
+                <div className="bg-slate-50 p-4 rounded-xl space-y-2.5 font-mono text-xs border border-gray-100">
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-sans font-bold block uppercase tracking-wider">Bénéficiaire</span>
+                    <span className="text-gray-900 font-semibold">{bankDetails?.nom || 'Non configuré'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-sans font-bold block uppercase tracking-wider">IBAN</span>
+                    <span className="text-gray-900 font-semibold break-all select-all">{bankDetails?.iban || 'Non configuré'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-sans font-bold block uppercase tracking-wider">BIC / SWIFT</span>
+                    <span className="text-gray-900 font-semibold select-all">{bankDetails?.bic || 'Non configuré'}</span>
+                  </div>
+                </div>
+                {bankDetails?.updatedAt && (
+                  <p className="text-[10px] text-gray-400 text-right italic">
+                    Mis à jour : {new Date(bankDetails.updatedAt).toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onUpdateBankDetails({
+                    id: 'default',
+                    nom: bankNom.trim(),
+                    iban: bankIban.trim().replace(/\s/g, ''),
+                    bic: bankBic.trim().toUpperCase(),
+                    updatedAt: new Date().toISOString()
+                  });
+                  setIsEditingBank(false);
+                  setBankSuccess(true);
+                  setTimeout(() => setBankSuccess(false), 3000);
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-gray-500 uppercase tracking-widest">Nom du Bénéficiaire</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Naouh Fatih"
+                    value={bankNom}
+                    onChange={(e) => setBankNom(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-gray-900 rounded-xl text-xs outline-none transition"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-gray-500 uppercase tracking-widest">IBAN</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="FR76 1621 8000 0140 1214 2778 679"
+                    value={bankIban}
+                    onChange={(e) => setBankIban(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-gray-900 rounded-xl text-xs font-mono outline-none transition"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-gray-500 uppercase tracking-widest">BIC / SWIFT</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="BFBKFRP1"
+                    value={bankBic}
+                    onChange={(e) => setBankBic(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-gray-900 rounded-xl text-xs font-mono outline-none transition"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl text-xs transition shadow-md hover:shadow-lg flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Enregistrer les modifications</span>
+                </button>
+              </form>
+            )}
+
+            {bankSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-xl flex items-center gap-2 text-xs">
+                <Check className="h-4 w-4 text-emerald-600" />
+                <span>Coordonnées enregistrées !</span>
+              </div>
+            )}
+          </div>
+
 
         </div>
       )}
@@ -624,13 +770,14 @@ export default function AdminPanel({
                     <th className="px-6 py-3.5">Client & Contacts</th>
                     <th className="px-6 py-3.5">Date & Heure</th>
                     <th className="px-6 py-3.5">Paiement</th>
+                    <th className="px-6 py-3.5">Statut / Actions</th>
                     <th className="px-6 py-3.5 text-right">Montant Réglé</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 font-medium">
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-gray-400 italic">
+                      <td colSpan={7} className="text-center py-12 text-gray-400 italic">
                         Aucun historique de vente disponible.
                       </td>
                     </tr>
@@ -660,7 +807,72 @@ export default function AdminPanel({
                           </td>
                           <td className="px-6 py-4 text-gray-500 font-mono space-y-0.5">
                             <p className="font-semibold text-gray-800">{tx.paymentMethod}</p>
-                            <p className="text-[10px] text-gray-400">Carte : •••• {tx.cardNumber}</p>
+                            {tx.paymentMethod !== 'Virement Bancaire' && (
+                              <p className="text-[10px] text-gray-400">Carte : •••• {tx.cardNumber}</p>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col space-y-1.5">
+                              {/* Status Badge */}
+                              {tx.status === 'success' || tx.status === 'virement_recu' ? (
+                                <span className="inline-flex items-center gap-1 w-fit font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full text-[10px]">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
+                                  Virement reçu (Confirmé)
+                                </span>
+                              ) : tx.status === 'virement_non_recu' ? (
+                                <span className="inline-flex items-center gap-1 w-fit font-extrabold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full text-[10px]">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                  Virement non reçu (Rejeté)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 w-fit font-extrabold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full text-[10px]">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                  En attente de virement
+                                </span>
+                              )}
+
+                              {/* Action Buttons for Virement Bancaire */}
+                              {tx.paymentMethod === 'Virement Bancaire' && onUpdateTransactionStatus && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => onUpdateTransactionStatus(tx.id, 'success')}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                      tx.status === 'success' || tx.status === 'virement_recu'
+                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700'
+                                    }`}
+                                    title="Confirmer la réception du virement"
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    Reçu
+                                  </button>
+                                  <button
+                                    onClick={() => onUpdateTransactionStatus(tx.id, 'virement_non_recu')}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                      tx.status === 'virement_non_recu'
+                                        ? 'bg-red-600 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-700'
+                                    }`}
+                                    title="Signaler virement non reçu"
+                                  >
+                                    <X className="h-3 w-3" />
+                                    Non reçu
+                                  </button>
+                                  <button
+                                    onClick={() => onUpdateTransactionStatus(tx.id, 'pending')}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                      tx.status === 'pending'
+                                        ? 'bg-amber-600 text-white shadow-sm'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-amber-50 hover:text-amber-700'
+                                    }`}
+                                    title="Remettre en attente"
+                                  >
+                                    <RefreshCw className="h-2.5 w-2.5" />
+                                    Attente
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-right">
                             <span className="font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
